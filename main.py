@@ -17,13 +17,9 @@ app.config['JSON_SORT_KEYS'] = False
 def optimization():
     data_model = create_data_model(request.json)
 
-    solve_problem(data_model)
+    solution = solve_problem(data_model)
 
-    json_response = json.dumps({
-        "predicted_date": "abc"
-    })
-
-    return Response(json_response, mimetype='application/json')
+    return Response(json.dumps(solution), mimetype='application/json')
 
 
 def create_data_model(problem):
@@ -31,43 +27,65 @@ def create_data_model(problem):
     data = {}
 
     data['distance_matrix'] = problem['durations']
-    data['demands'] = list(map(lambda location: location['weight'], problem['metadata']['query']['locations']))
+    data['demands'] = list(map(lambda location: location['demand'], problem['metadata']['query']['locations']))
 
     data['vehicle_capacities'] = problem['metadata']['cars']
     data['num_vehicles'] = len(data['vehicle_capacities'])
     data['depot'] = 0
+
+    data['locations'] = problem['metadata']['query']['locations']
 
     print('Created: ')
     print(data)
     return data
 
 
-def print_solution(data, manager, routing, solution):
+def get_solution(data, manager, routing, solution):
+    json_response = {}
     """Prints solution on console."""
     total_distance = 0
     total_load = 0
+
+    json_response['routes'] = []
     for vehicle_id in range(data['num_vehicles']):
+
         index = routing.Start(vehicle_id)
         plan_output = 'Route for vehicle {}:\n'.format(vehicle_id)
         route_distance = 0
         route_load = 0
+
+        locations = []
         while not routing.IsEnd(index):
             node_index = manager.IndexToNode(index)
             route_load += data['demands'][node_index]
             plan_output += ' {0} Load({1}) -> '.format(node_index, route_load)
+
+            locations.append(data['locations'][node_index])
+
             previous_index = index
             index = solution.Value(routing.NextVar(index))
             route_distance += routing.GetArcCostForVehicle(
                 previous_index, index, vehicle_id)
         plan_output += ' {0} Load({1})\n'.format(manager.IndexToNode(index),
                                                  route_load)
+
+        locations.append(data['locations'][manager.IndexToNode(index)])
+        json_response['routes'].append({'locations': locations})
+
+        print(json_response)
         plan_output += 'Distance of the route: {}m\n'.format(route_distance)
+
         plan_output += 'Load of the route: {}\n'.format(route_load)
         print(plan_output)
         total_distance += route_distance
         total_load += route_load
     print('Total distance of all routes: {}m'.format(total_distance))
     print('Total load of all routes: {}'.format(total_load))
+    json_response['total_distance'] = total_distance
+    json_response['total_load'] = total_load
+    print(json_response)
+
+    return json_response
 
 
 def solve_problem(data):
@@ -121,7 +139,7 @@ def solve_problem(data):
     print(solution)
     # Print solution on console.
     if solution:
-        print_solution(data, manager, routing, solution)
+        return get_solution(data, manager, routing, solution)
 
 
 if __name__ == '__main__':
